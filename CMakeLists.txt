@@ -94,6 +94,7 @@ target_sources(oink
     src/solvers/mspm.cpp
     src/solvers/tspm.cpp
     src/solvers/sspm.cpp
+    src/solvers/strpm.cpp
     src/solvers/qpt.cpp
     src/solvers/tl.cpp
     src/solvers/rtl.cpp
