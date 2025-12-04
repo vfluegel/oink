@@ -403,14 +403,9 @@ SSPMSolver::lift(int v, int target, int &str, int pl)
     // if even owns and target is set, just check if specific target is better
     if (owner(v) == pl and target != -1) {
         to_tmp(target);
-        if (pl == (pr&1)) prog_tmp(pindex, h);
-        else trunc_tmp(pindex);
-        to_best(v);
-        if (compare(pindex) > 0) {
-            from_tmp(v);
 #ifndef NDEBUG
             if (trace >= 2) {
-                logger << "to successor " << label_vertex(target) << ":";
+                logger << "to target " << label_vertex(target) << ":";
                 stream_tmp(logger, h);
                 logger << " =>";
             }
@@ -423,6 +418,9 @@ SSPMSolver::lift(int v, int target, int &str, int pl)
                 logger << std::endl;
             }
 #endif
+        to_best(v);
+        if (compare(pindex) > 0) {
+            from_tmp(v);
 #ifndef NDEBUG
             if (trace >= 1) {
                 logger << "\033[32;1mnew measure\033[m of \033[36;1m" << label_vertex(v) << "\033[m:";
