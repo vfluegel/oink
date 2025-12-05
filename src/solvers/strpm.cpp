@@ -79,6 +79,7 @@ STRPMSolver::tmp_to_test()
 void
 STRPMSolver::trunc_tmp(int pindex)
 {
+    if (tmp_d.size() == 0) return; 
     if (tmp_d[0] == -1) return; // already Top
     // compute the lowest pindex >= p
     // [pindex],.,...,.. => [pindex],000
@@ -109,14 +110,23 @@ STRPMSolver::skipUntilNextLevel (std::vector<int>& curr_d, int i)
 void
 STRPMSolver::prog_tmp(int pindex, int h)
 {
+    // Check fo empty - We can go to top
+    if (tmp_d.size() == 0)
+    {
+        tmp_d.push_back(-1);
+        return;
+    }
     // Simple case 1: Top >_p Top
     if (tmp_d[0] == -1) return; // already Top
 
     bool skipLevel = false;
     int i = tmp_d.size() - 1;
 #ifndef NDEBUG
-    logger << "Start i in " << i << std::endl;
-    logger << "Skipping bits below p\n";
+    if (trace >= 2) 
+    {
+        logger << "Start i in " << i << std::endl;
+        logger << "Skipping bits below p\n";
+    }
 #endif
     // skip bits "below p"
     while (i >= 0 && tmp_d[i] > pindex) 
@@ -125,20 +135,29 @@ STRPMSolver::prog_tmp(int pindex, int h)
         i --;
     }
 #ifndef NDEBUG
-    logger << "After skipping i is " << i << std::endl;
+    if (trace >= 2) 
+    {
+        logger << "After skipping i is " << i << std::endl;
 
-    logger << "Calculating NES ";
+        logger << "Calculating NES ";
+    }
 #endif
     // Calculate number of Non-Empty Strings (NES): count unique values in tmp_d up until there
     size_t nes = std::unordered_set<int>( tmp_d.begin(), tmp_d.begin() + i + 1 ).size();
 #ifndef NDEBUG
-    logger << nes << std::endl;
+    if (trace >= 2) 
+    {
+        logger << nes << std::endl;
+    }
 #endif
     // Subtract the string that we currently look at (A, B only refers to strings "above")
     if (nes - 1 == k - 1) {
         // A: No next sibling on this layer
 #ifndef NDEBUG
+    if (trace >= 2) 
+    {
         logger << "Skipping a level\n";
+    }
 #endif
         i = skipUntilNextLevel(tmp_d, i);
     }
@@ -148,18 +167,27 @@ STRPMSolver::prog_tmp(int pindex, int h)
         if (i == tmp_d.size()-1 or tmp_d[i] != tmp_d[i+1]) 
         {
 #ifndef NDEBUG
-            logger << "Handling level change\n";
+            if (trace >= 2) 
+            {
+                logger << "Handling level change\n";
+            }
 #endif
             // Calculate the Non-Leading Bits (NLB): take the complete length and subtract the number of NES (every NES has one leading bit)
             int nlb = (i + 1) - nes;
             nes --;
 #ifndef NDEBUG
-            logger << "NLB " << nlb << " i " << i << " NES " << nes << std::endl;
+            if (trace >= 2) 
+            {
+                logger << "NLB " << nlb << " i " << i << " NES " << nes << std::endl;
+            }
 #endif
             if (nlb < t) 
             {
 #ifndef NDEBUG
-                logger <<  "Smaller than t\n";
+                if (trace >= 2) 
+                {
+                    logger <<  "Smaller than t\n";
+                }
 #endif
                 int new_index = i == tmp_d.size() - 1 ? tmp_d[i] : tmp_d[i+1] - 1;
                 i ++;
@@ -203,7 +231,10 @@ STRPMSolver::prog_tmp(int pindex, int h)
             if (i == 0 || tmp_d[i - 1] != tmp_d[i])
             {
 #ifndef NDEBUG
-                logger << "Found a 0 in the beginning\n";
+                if (trace >= 2) 
+                {
+                    logger << "Found a 0 in the beginning\n";
+                }
 #endif
                 // The 0 is either the first bit in total, or it is the first bit of that level
                 int strings_after_current = std::unordered_set<int> (tmp_d.begin() + i, tmp_d.end()).size();
@@ -226,7 +257,10 @@ STRPMSolver::prog_tmp(int pindex, int h)
             else {
                 assert (tmp_d[i - 1] == tmp_d[i]);
 #ifndef NDEBUG
-                logger << "A zero in the middle!\n";
+                if (trace >= 2) 
+                {
+                    logger << "A zero in the middle!\n";
+                }
 #endif
                 break;
             }
@@ -234,7 +268,10 @@ STRPMSolver::prog_tmp(int pindex, int h)
         else 
         {
 #ifndef NDEBUG
-            logger << "start setting things to 0\n";
+            if (trace >= 2) 
+            {
+                logger << "start setting things to 0\n";
+            }
 #endif
             // We can already start setting everything there to 0 and change where it belongs later
             tmp_b[i] = 0;
@@ -249,7 +286,10 @@ STRPMSolver::prog_tmp(int pindex, int h)
         if (tmp_d[0] == 0)
         {
 #ifndef NDEBUG
-            logger << "We are at top\n";
+            if (trace >= 2) 
+            {
+                logger << "We are at top\n";
+            }
 #endif
             tmp_d[0] = -1;
             return;
@@ -267,10 +307,13 @@ STRPMSolver::prog_tmp(int pindex, int h)
     }
 
     // Change where the bits belong
-    #ifndef NDEBUG
-    logger << "Adjusting bit level\n";
-    logger << "starting at " << i << std::endl; 
-    #endif
+#ifndef NDEBUG
+    if (trace >= 2) 
+    {
+        logger << "Adjusting bit level\n";
+        logger << "starting at " << i << std::endl; 
+    }
+#endif
     
     int no_of_needed_nes = (k-1) - (nes+1);
     if (no_of_needed_nes == 0) {
@@ -281,9 +324,12 @@ STRPMSolver::prog_tmp(int pindex, int h)
     else {
         int set_index = tmp_d[(skipLevel ? i : i-1)] + 1;
         // Fill up with just the next one as long as we still have bits
-    #ifndef NDEBUG
-        logger << "Needed nes: " << no_of_needed_nes << std::endl;
-    #endif
+#ifndef NDEBUG
+        if (trace >= 2) 
+        {
+            logger << "Needed nes: " << no_of_needed_nes << std::endl;
+        }
+#endif
         while (tmp_b.size() - i >= no_of_needed_nes) 
         {
             assert (i >= 0 && i < tmp_d.size());
@@ -291,7 +337,10 @@ STRPMSolver::prog_tmp(int pindex, int h)
             i ++;
         }
 #ifndef NDEBUG
-        logger << "Filling singles\n";
+        if (trace >= 2) 
+        {
+            logger << "Filling singles\n";
+        }
 #endif
         // Now assign the rest of the bits one level a piece
         while (i < tmp_b.size())
@@ -309,7 +358,11 @@ STRPMSolver::prog_tmp(int pindex, int h)
 void
 STRPMSolver::stream_pm(std::ostream &out, int idx)
 {
-    if (pm_d[idx][0] == -1) {
+    if (pm_d[idx].size() == 0)
+    {
+        out << "{ ε }";
+    }
+    else if (pm_d[idx][0] == -1) {
         out << " \033[1;33mTop\033[m";
     } else {
         out << " { ";
@@ -334,7 +387,11 @@ STRPMSolver::stream_pm(std::ostream &out, int idx)
 void
 STRPMSolver::stream_tmp(std::ostream &out, int h)
 {
-    if (tmp_d[0] == -1) {
+    if (tmp_d.size() == 0)
+    {
+        out << "{ ε }";
+    }
+    else if (tmp_d[0] == -1) {
         out << " \033[1;33mTop\033[m";
     } else {
         out << " { ";
@@ -382,7 +439,11 @@ STRPMSolver::stream_tmp(std::ostream &out, int h)
 void
 STRPMSolver::stream_best(std::ostream &out, int h)
 {
-    if (best_d[0] == -1) {
+    if (best_d.size() == 0)
+    {
+        out << "{ ε }";
+    }
+    else if (best_d[0] == -1) {
         out << " \033[1;33mTop\033[m";
     } else {
         out << " { ";
@@ -411,9 +472,20 @@ int
 STRPMSolver::compare(int pindex, std::vector<bool>& other_b, std::vector<int>& other_d)
 {
     // cases involving Top
-    if (tmp_d[0] == -1 and other_d[0] == -1) return 0;
-    if (tmp_d[0] == -1) return 1;
-    if (other_d[0] == -1) return -1;
+    if (tmp_d.size() > 0)
+    {
+        if (other_d.size() > 0)
+        {
+            if (tmp_d[0] == -1 and other_d[0] == -1) return 0;
+
+        }
+        else 
+        {
+            if (tmp_d[0] == -1) return 1;
+        }
+    }
+    else if (other_d.size() == 0) return 0;
+    if (other_d.size() > 0 and other_d[0] == -1) return -1;
 
     for (int i=0; i<std::max(tmp_d.size(), other_d.size()); i++) {
         if (i >= other_b.size())
@@ -448,7 +520,7 @@ bool
 STRPMSolver::lift(int v, int target, int &str, int pl)
 {
     // check if already Top
-    if (pm_d[v][0] == -1) return false; // already Top
+    if (pm_d[v].size() > 0 and pm_d[v][0] == -1) return false; // already Top
 
     const int pr = priority(v);
     const int pindex = pl == 0 ? h-(pr+1)/2-1 : h-pr/2-1;
@@ -608,18 +680,37 @@ STRPMSolver::run(int n_bits, int depth, int player)
 {
     t = n_bits;
     h = depth;
-    k = t + 2;  // Maybe possible: std::min(t + 2, h);
+    k = t+2;
+    //assert (k <= h);
 
     logger << "Strahler-tree parameters for player " << player << ": k = " << k << ", t = " << t << ", h = " << h << std::endl;
 
     // initialize progress measures - Every node is set to the smallest leaf in the tree
-    pm_b = std::vector<std::vector<bool>> (nodecount(), std::vector<bool>(k-1+t, 0));
-    std::vector<int> initial_d (k-1+t, 0);
-    for (size_t i = t + 2; i < initial_d.size(); i++)
+    if (k == 1 and h == 1) 
     {
-        initial_d[i] = initial_d[i-1] + 1;
+        pm_b = std::vector<std::vector<bool>> (nodecount(), std::vector<bool>(0));
+        pm_d = std::vector<std::vector<int>> (nodecount(), std::vector<int>(0));
     }
-    pm_d = std::vector<std::vector<int>> (nodecount(), initial_d);
+    else 
+    {
+        pm_b = std::vector<std::vector<bool>> (nodecount(), std::vector<bool>(k-1+t, 0));
+        std::vector<int> initial_d (k-1+t, 0);
+        for (size_t i = t + 2; i < initial_d.size(); i++)
+        {
+            initial_d[i] = initial_d[i-1] + 1;
+        }
+        pm_d = std::vector<std::vector<int>> (nodecount(), initial_d);
+    }
+    
+
+#ifndef NDEBUG
+    if (trace >= 1)
+    {
+        logger << "Initial PM: " << std::endl;
+        stream_pm(logger, 0);
+        logger << std::endl;
+    }
+#endif
 
     for (int n=nodecount()-1; n>=0; n--) {
         if (disabled[n]) continue;
@@ -663,7 +754,7 @@ STRPMSolver::run(int n_bits, int depth, int player)
 
     for (int v=0; v<nodecount(); v++) {
         if (disabled[v]) continue;
-        if (pm_d[v][0] != -1) {
+        if (pm_d[v].size() == 0 or pm_d[v][0] != -1) {
             if (owner(v) != player) {
                 // TODO: don't rely on the strategy array in the Game class
                 if (lift(v, -1, game.getStrategy()[v], player)) logger << "error: " << v << " is not progressive!" << std::endl;
@@ -678,7 +769,7 @@ STRPMSolver::run(int n_bits, int depth, int player)
             logger << "\033[1m" << label_vertex(v) << (owner(v)?" (odd)":" (even)") << "\033[m:";
             stream_pm(logger, v);
 
-            if (pm_d[v][0] != -1) {
+            if (pm_d[v].size() == 0 or pm_d[v][0] != -1) {
                 if (owner(v) != player) {
                     logger << " => " << label_vertex(game.getStrategy(v));
                 }
@@ -694,7 +785,7 @@ STRPMSolver::run(int n_bits, int depth, int player)
 
     for (int v=0; v<nodecount(); v++) {
         if (disabled[v]) continue;
-        if (pm_d[v][0] != -1) Solver::solve(v, 1-player, game.getStrategy(v));
+        if (pm_d[v].size() == 0 or pm_d[v][0] != -1) Solver::solve(v, 1-player, game.getStrategy(v));
     }
 
     Solver::flush();
