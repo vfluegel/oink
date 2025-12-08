@@ -606,9 +606,11 @@ floor_log2 (unsigned long long x)
 void
 STRPMSolver::run(int n_bits, int depth, int player)
 {
+    // Marcin's word: think of h as the number of priorities of the
+    // opponent... PLUS ONE!
     t = n_bits;
-    h = depth;
-    k = t + 2;  // Maybe possible: std::min(t + 2, h);
+    h = depth + 1;  // FIXME: This is Guillermo's hack, the +1
+    k = std::min(n_bits + 2, h);  // Maybe possible: std::min(t + 2, h);
 
     logger << "Strahler-tree parameters for player " << player << ": k = " << k << ", t = " << t << ", h = " << h << std::endl;
 
