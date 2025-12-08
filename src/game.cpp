@@ -443,7 +443,7 @@ Game::write_dot(std::ostream &out)
 {
     out << "digraph G {" << std::endl;
     for (int i=0; i<n_vertices; i++) {
-        out << i << " [ shape=\"" << (owner(i) ? "box" : "diamond")
+        out << i << " [ shape=\"" << (owner(i) ? "box" : "pentagon")
             << "\", label=\"" << *rawlabel(i) << " (" 
             << priority(i) << ")\"];" << std::endl;
         for (auto curedge = outs(i); *curedge != -1; curedge++) {
