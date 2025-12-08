@@ -115,8 +115,11 @@ STRPMSolver::prog_tmp(int pindex, int h)
     bool skipLevel = false;
     int i = tmp_d.size() - 1;
 #ifndef NDEBUG
+    if (trace >= 2) 
+    {
     logger << "Start i in " << i << std::endl;
     logger << "Skipping bits below p\n";
+    }
 #endif
     // skip bits "below p"
     while (i >= 0 && tmp_d[i] > pindex) 
@@ -125,20 +128,23 @@ STRPMSolver::prog_tmp(int pindex, int h)
         i --;
     }
 #ifndef NDEBUG
+    if (trace >= 2) 
+    {
     logger << "After skipping i is " << i << std::endl;
 
     logger << "Calculating NES ";
+    }
 #endif
     // Calculate number of Non-Empty Strings (NES): count unique values in tmp_d up until there
     size_t nes = std::unordered_set<int>( tmp_d.begin(), tmp_d.begin() + i + 1 ).size();
 #ifndef NDEBUG
-    logger << nes << std::endl;
+    if (trace >= 2) logger << nes << std::endl;
 #endif
     // Subtract the string that we currently look at (A, B only refers to strings "above")
     if (nes - 1 == k - 1) {
         // A: No next sibling on this layer
 #ifndef NDEBUG
-        logger << "Skipping a level\n";
+        if (trace >= 2) logger << "Skipping a level\n";
 #endif
         i = skipUntilNextLevel(tmp_d, i);
     }
@@ -148,18 +154,18 @@ STRPMSolver::prog_tmp(int pindex, int h)
         if (i == tmp_d.size()-1 or tmp_d[i] != tmp_d[i+1]) 
         {
 #ifndef NDEBUG
-            logger << "Handling level change\n";
+            if (trace >= 2) logger << "Handling level change\n";
 #endif
             // Calculate the Non-Leading Bits (NLB): take the complete length and subtract the number of NES (every NES has one leading bit)
             int nlb = (i + 1) - nes;
             nes --;
 #ifndef NDEBUG
-            logger << "NLB " << nlb << " i " << i << " NES " << nes << std::endl;
+            if (trace >= 2) logger << "NLB " << nlb << " i " << i << " NES " << nes << std::endl;
 #endif
             if (nlb < t) 
             {
 #ifndef NDEBUG
-                logger <<  "Smaller than t\n";
+                if (trace >= 2) logger <<  "Smaller than t\n";
 #endif
                 int new_index = i == tmp_d.size() - 1 ? tmp_d[i] : tmp_d[i+1] - 1;
                 i ++;
@@ -203,11 +209,11 @@ STRPMSolver::prog_tmp(int pindex, int h)
             if (i == 0 || tmp_d[i - 1] != tmp_d[i])
             {
 #ifndef NDEBUG
-                logger << "Found a 0 in the beginning\n";
+                if (trace >= 2) logger << "Found a 0 in the beginning\n";
 #endif
                 // The 0 is either the first bit in total, or it is the first bit of that level
                 int strings_after_current = std::unordered_set<int> (tmp_d.begin() + i, tmp_d.end()).size();
-                if (strings_after_current == h - tmp_d[i])
+                if (strings_after_current == (h-1) - tmp_d[i])
                 {
                     // All bitstrings after the current level are non-empty, we simply move on
                     // C: No sibling on this layer
@@ -226,7 +232,7 @@ STRPMSolver::prog_tmp(int pindex, int h)
             else {
                 assert (tmp_d[i - 1] == tmp_d[i]);
 #ifndef NDEBUG
-                logger << "A zero in the middle!\n";
+                if (trace >= 2) logger << "A zero in the middle!\n";
 #endif
                 break;
             }
@@ -234,7 +240,7 @@ STRPMSolver::prog_tmp(int pindex, int h)
         else 
         {
 #ifndef NDEBUG
-            logger << "start setting things to 0\n";
+            if (trace >= 2) logger << "start setting things to 0\n";
 #endif
             // We can already start setting everything there to 0 and change where it belongs later
             tmp_b[i] = 0;
@@ -249,7 +255,7 @@ STRPMSolver::prog_tmp(int pindex, int h)
         if (tmp_d[0] == 0)
         {
 #ifndef NDEBUG
-            logger << "We are at top\n";
+            if (trace >= 2) logger << "We are at top\n";
 #endif
             tmp_d[0] = -1;
             return;
@@ -268,8 +274,11 @@ STRPMSolver::prog_tmp(int pindex, int h)
 
     // Change where the bits belong
     #ifndef NDEBUG
+    if (trace >= 2)
+    {
     logger << "Adjusting bit level\n";
     logger << "starting at " << i << std::endl; 
+    }
     #endif
     
     int no_of_needed_nes = (k-1) - (nes+1);
@@ -282,7 +291,7 @@ STRPMSolver::prog_tmp(int pindex, int h)
         int set_index = tmp_d[(skipLevel ? i : i-1)] + 1;
         // Fill up with just the next one as long as we still have bits
     #ifndef NDEBUG
-        logger << "Needed nes: " << no_of_needed_nes << std::endl;
+        if (trace >= 2) logger << "Needed nes: " << no_of_needed_nes << std::endl;
     #endif
         while (tmp_b.size() - i >= no_of_needed_nes) 
         {
@@ -291,7 +300,7 @@ STRPMSolver::prog_tmp(int pindex, int h)
             i ++;
         }
 #ifndef NDEBUG
-        logger << "Filling singles\n";
+        if (trace >= 2) logger << "Filling singles\n";
 #endif
         // Now assign the rest of the bits one level a piece
         while (i < tmp_b.size())
@@ -622,6 +631,15 @@ STRPMSolver::run(int n_bits, int depth, int player)
         initial_d[i] = initial_d[i-1] + 1;
     }
     pm_d = std::vector<std::vector<int>> (nodecount(), initial_d);
+
+#ifndef NDEBUG
+    if (trace >= 1)
+    {
+        logger << "Initial PM: " << std::endl;
+        stream_pm(logger, 0);
+        logger << std::endl;
+    }
+#endif
 
     for (int n=nodecount()-1; n>=0; n--) {
         if (disabled[n]) continue;
