@@ -1,0 +1,16 @@
+PGSolver Collection Ver. 4.3: Parity Game Solver
+Authors: Oliver Friedmann (University of Munich) and Martin Lange (University of Kassel), 2008-2024
+http://tcsprojects.org
+
+Generating Clique Game with arguments '100'... 0.00 sec
+Chosen not to solve at all.
+
+Player 0 wins from nodes:
+  {}
+with strategy
+  []
+
+Player 1 wins from nodes:
+  {}
+with strategy
+  []

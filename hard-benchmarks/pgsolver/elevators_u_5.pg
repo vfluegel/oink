@@ -1,0 +1,14 @@
+./_build/default/src/apps/generator/generator.exe: unknown option '-u'.
+
+PGSolver Collection Ver. 4.3: Parity Game Generator
+Authors: Oliver Friedmann (University of Munich) and Martin Lange (University of Kassel), 2008-2024
+http://tcsprojects.org
+
+Usage:
+    generator --generator [family] [parameters]
+Generates parity games to STDOUT.
+
+  -v <level>
+     sets the verbosity level, valid arguments are 0 (quiet), 1 (default), 2 (verbose) and 3 (very verbose)
+  --generator, -gen <generator> use generator, valid ones are cliquegame clusteredrg elevatorvergm jurdzinskigame laddergame langincl modelcheckerladder randomgame recursivedullgame recursiveladder roadworksvergm steadygame towersofhanoi
+
