@@ -113,10 +113,22 @@ STRPMSolver::prog_tmp(int pindex, int h)
     if (tmp_d[0] == -1) return; // already Top
 
     bool skipLevel = false;
+    assert (*std::max_element(tmp_d.begin(), tmp_d.end()) < h-1);
     int i = tmp_d.size() - 1;
 #ifndef NDEBUG
     if (trace >= 2) 
     {
+        logger << "Calculating successor of: ";
+        for (auto &&bit : tmp_b)
+        {
+            logger << bit;
+        }
+        logger << " ";
+        for (auto &&loc : tmp_d)
+        {
+            logger << loc;
+        }
+        logger << std::endl;
     logger << "Start i in " << i << std::endl;
     logger << "Skipping bits below p\n";
     }
@@ -136,7 +148,8 @@ STRPMSolver::prog_tmp(int pindex, int h)
     }
 #endif
     // Calculate number of Non-Empty Strings (NES): count unique values in tmp_d up until there
-    size_t nes = std::unordered_set<int>( tmp_d.begin(), tmp_d.begin() + i + 1 ).size();
+    int nes = std::unordered_set<int>( tmp_d.begin(), tmp_d.begin() + i + 1 ).size();
+    assert (nes >= 0);
 #ifndef NDEBUG
     if (trace >= 2) logger << nes << std::endl;
 #endif
@@ -173,6 +186,7 @@ STRPMSolver::prog_tmp(int pindex, int h)
                 {
                     tmp_b.insert(tmp_b.end(), t - nlb, 0);
                     tmp_b[i] = 1;
+                    for (size_t j = i; j < tmp_d.size(); j++) tmp_d[j] = new_index;
                     tmp_d.insert(tmp_d.end(), t - nlb, new_index);
                     i += t - nlb;
                 }
@@ -306,6 +320,7 @@ STRPMSolver::prog_tmp(int pindex, int h)
         while (i < tmp_b.size())
         {
             set_index ++;
+            assert (set_index < h);
             tmp_d[i] = set_index;
             i ++;
         }
@@ -323,7 +338,7 @@ STRPMSolver::stream_pm(std::ostream &out, int idx)
     } else {
         out << " { ";
         int j=0;
-        for (int i=0; i<h; i++) {
+        for (int i=0; i<h-1; i++) {
             if (i>0) out << ",";
             int c=0;
             while (j<pm_d[idx].size() and pm_d[idx][j] == i) {
@@ -348,7 +363,7 @@ STRPMSolver::stream_tmp(std::ostream &out, int h)
     } else {
         out << " { ";
         int j=0;
-        for (int i=0; i<h; i++) {
+        for (int i=0; i<h-1; i++) {
             if (i>0) out << ",";
             int c=0;
             while (j<tmp_b.size() and tmp_d[j] == i) {
@@ -396,7 +411,7 @@ STRPMSolver::stream_best(std::ostream &out, int h)
     } else {
         out << " { ";
         int j=0;
-        for (int i=0; i<h; i++) {
+        for (int i=0; i<h-1; i++) {
             if (i>0) out << ",";
             int c=0;
             while (j<best_b.size() and best_d[j] == i) {
@@ -460,7 +475,7 @@ STRPMSolver::lift(int v, int target, int &str, int pl)
     if (pm_d[v][0] == -1) return false; // already Top
 
     const int pr = priority(v);
-    const int pindex = pl == 0 ? h-(pr+1)/2-1 : h-pr/2-1;
+    const int pindex = pl == 0 ? (h-1)-(pr+1)/2-1 : (h-1)-pr/2-1;
 
 #ifndef NDEBUG
     if (trace >= 2) {
@@ -475,7 +490,7 @@ STRPMSolver::lift(int v, int target, int &str, int pl)
         to_tmp(target);
 #ifndef NDEBUG
             if (trace >= 2) {
-                logger << "to target " << label_vertex(target) << ":";
+                logger << "to target " << label_vertex(target) << "(" << target << ")" << ":";
                 stream_tmp(logger, h);
                 logger << " =>";
             }
@@ -626,7 +641,7 @@ STRPMSolver::run(int n_bits, int depth, int player)
     // initialize progress measures - Every node is set to the smallest leaf in the tree
     pm_b = std::vector<std::vector<bool>> (nodecount(), std::vector<bool>(k-1+t, 0));
     std::vector<int> initial_d (k-1+t, 0);
-    for (size_t i = t + 2; i < initial_d.size(); i++)
+    for (size_t i = t + 1; i < initial_d.size(); i++)
     {
         initial_d[i] = initial_d[i-1] + 1;
     }
