@@ -191,17 +191,18 @@ STRPM_SIMDSolver::batch_prog_tmp(int pindex, int h, int cnt)
     // =====================================================================
     // k == 2 fast path: stride = 1, so lane j == PM j.
     //
-    // Avoids the NLB prefix-sum and stp/afa copy_from overhead.
-    // One O(cnt) scalar pass handles all bit/level/nlanes updates;
-    // two predicated 32-wide SIMD writes apply all mask updates in bulk.
+    // Saves the NLB prefix-sum (nlb_b=0 always, nlb_c=per_elem) and the
+    // match-finding loop (merged into the case loop below).  Uses wb/wm
+    // byte arrays — not SIMD element access — for scalar writes, then a
+    // single copy_from pair at the end to apply all changes in bulk.
     // =====================================================================
     if (k == 2) {
-        // stp / afa (scalar, O(cnt), no inner loop)
+        // stp / afa (scalar, O(cnt), no inner loop for k=2)
         alignas(32) uint8_t stp_arr[32] = {}, afa_arr[32] = {};
         for (int j = 0; j < cnt; j++) {
             if (batch_nlanes[j] == 0 || batch_levels[j] == -1) continue;
             stp_arr[j] = (batch_levels[j] <= pindex) ? 1 : 0;
-            // k=2 → nlanes=1, i=0: afa iff (h-1-level) == (nlanes-i) == 1
+            // nlanes=1, i=0: afa iff (h-1-level) == 1 iff level == h-2
             afa_arr[j] = (batch_levels[j] == h - 2) ? 1 : 0;
         }
         simd_uint8_32 stp_v, afa_v;
@@ -209,7 +210,7 @@ STRPM_SIMDSolver::batch_prog_tmp(int pindex, int h, int cnt)
         afa_v.copy_from(afa_arr, stdx::element_aligned);
 
         // has_succ (32-wide SIMD)
-        // For k=2 nlb_b[j]=0, so (nlb_b==t) fires only if t==0 (invalid); omit.
+        // nlb_b[j]=0 always → (nlb_b==t) fires only if t==0 (invalid); omit.
         simd_uint8_32_mask has_bits_m = (batch_masks > simd_uint8_32(0));
         simd_uint8_32_mask smaller_p  = has_bits_m & (stp_v > simd_uint8_32(0));
         simd_uint8_32      pat01      = batch_masks & simd_uint8_32(0xFE);
@@ -219,61 +220,53 @@ STRPM_SIMDSolver::batch_prog_tmp(int pindex, int h, int cnt)
                | (batch_bits == batch_masks));
         simd_uint8_32_mask has_succ = smaller_p & !no_succ;
 
-        // keep_arr / tail_arr: drive the two predicated mask updates below.
-        alignas(32) uint8_t keep_arr[32] = {};
-        alignas(32) uint8_t tail_arr[32] = {};
+        // Working byte arrays: plain scalar writes, no SIMD element access.
+        alignas(32) uint8_t wb[32], wm[32];
+        batch_bits .copy_to(wb, stdx::element_aligned);
+        batch_masks.copy_to(wm, stdx::element_aligned);
+
+        const uint8_t tail_mask = static_cast<uint8_t>((1u << (t + 1)) - 1);
 
         for (int j = 0; j < cnt; j++) {
             if (batch_nlanes[j] == 0 || batch_levels[j] == -1) continue;
-            const uint8_t bv = static_cast<uint8_t>(batch_bits[j]);
-            const uint8_t mv = static_cast<uint8_t>(batch_masks[j]);
+            const uint8_t bv = wb[j], mv = wm[j];
 
             if (has_succ[j]) {
                 if (per_elem[j] >= static_cast<uint8_t>(t)) {
                     // Case A: all t NLB slots used
                     int rb = std::countl_one(static_cast<uint8_t>(bv | ~mv)) + 1;
-                    if (rb < 8) {
-                        // Partial: bits &= keep; mi → 1 == k-1, no tail fill
-                        const uint8_t keep = static_cast<uint8_t>((1u << (8 - rb)) - 1);
-                        batch_bits[j] = bv & keep;
-                        keep_arr[j]   = keep;   // masks &= keep via SIMD
-                    } else {
-                        // Full: clear bits, level++, tail fill sets mask
-                        batch_bits[j]   = 0;
+                    uint8_t keep = (rb < 8) ? static_cast<uint8_t>((1u << (8 - rb)) - 1) : 0u;
+                    wb[j] = bv & keep;
+                    wm[j] = mv & keep;
+                    if (rb == 8) {
+                        // Full reset: level++, tail fill
                         batch_levels[j] += 1;
-                        tail_arr[j] = 1;
+                        wm[j] = tail_mask;
                     }
+                    // rb < 8: partial reset, mi → 1 == k-1, no tail fill
                 } else {
-                    // Case B: extend string by one bit position
-                    batch_bits[j] = bv | static_cast<uint8_t>(1u << std::popcount(mv));
-                    tail_arr[j] = 1;
+                    // Case B: extend string + tail fill
+                    wb[j] = bv | static_cast<uint8_t>(1u << std::popcount(mv));
+                    wm[j] = tail_mask;
                 }
             } else {
                 // mi == -1: carry or overflow
                 int new_level = std::min(batch_levels[j], pindex + 1) - 1;
                 if (new_level < 0) {
-                    // Overflow to Top: write masks directly; no SIMD touch needed
-                    batch_bits[j]   = 0;
-                    batch_masks[j]  = 0;
+                    wb[j] = 0; wm[j] = 0;
                     batch_nlanes[j] = 1;
                     batch_levels[j] = -1;
                 } else {
-                    // Carry: leading "1" at new_level; tail fill sets mask
-                    batch_bits[j]   = 1;
+                    // Carry: leading "1" + tail fill
+                    wb[j]           = 1;
+                    wm[j]           = tail_mask;
                     batch_levels[j] = new_level;
-                    tail_arr[j] = 1;
                 }
             }
         }
 
-        // Predicated mask updates (32-wide SIMD, two passes)
-        simd_uint8_32 keep_v; keep_v.copy_from(keep_arr, stdx::element_aligned);
-        // Case A partial: masks &= keep
-        stdx::where(keep_v > simd_uint8_32(0), batch_masks) &= keep_v;
-        // Case B + Case A full + carry: masks = (1u << (t+1)) - 1
-        simd_uint8_32 tail_v; tail_v.copy_from(tail_arr, stdx::element_aligned);
-        const uint8_t tmv = static_cast<uint8_t>((1u << (t + 1)) - 1);
-        stdx::where(tail_v > simd_uint8_32(0), batch_masks) = simd_uint8_32(tmv);
+        batch_bits .copy_from(wb, stdx::element_aligned);
+        batch_masks.copy_from(wm, stdx::element_aligned);
         return;
     }
 
