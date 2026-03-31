@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+#include <cassert>
 #include <iomanip>
 #include <unordered_map>
 #include <unordered_set>
@@ -91,7 +92,7 @@ STRPM_SIMDSolver::prog_tmp(int pindex, int h)
     if (k == 1 and tmp_nlanes == 0)
     {
         // We can immediately handle k = 1, it's just one branch and top
-        tmp_levels[0] = -1;
+        tmp_levels[0] = int16_t(-1);
         tmp_nlanes = 1;
         tmp_bits = 0;
         tmp_masks = 0;
@@ -119,20 +120,34 @@ STRPM_SIMDSolver::prog_tmp(int pindex, int h)
     // nlb_before[i] = total NLB in lanes 0..i-1 (exclusive prefix sum)
     simd_uint8 nlb_before = nlb_counts - per_elem;
 
-    // --- Per-lane predicates computed scalarly (levels are int, can exceed 255) ---
-    // smaller_than_p: lane i's level is at or before the priority index pindex,
-    //   meaning this string can potentially be incremented by prog.
-    // all_filled_after: from lane i onward, every remaining level slot is occupied
-    //   (no gaps), so no room to insert new strings after this point.
-    alignas(8) uint8_t stp_arr[8] = {};
-    alignas(8) uint8_t afa_arr[8] = {};
-    for (int i = 0; i < tmp_nlanes; i++) {
-        if (tmp_levels[i] <= pindex) stp_arr[i] = 1;
-        if ((h - 1 - tmp_levels[i]) == (tmp_nlanes - i)) afa_arr[i] = 1;
-    }
+    // --- Per-lane predicates vectorized via simd<int16_t, 8> ---
+    // tmp_levels is alignas(16), so copy_from/copy_to are safe.
+    // smaller_than_p: lane i's level is at or before the priority index pindex.
+    // all_filled_after: from lane i onward, every remaining level slot is occupied.
+    simd_int16 lev;
+    lev.copy_from(tmp_levels, stdx::element_aligned);
+
+    // smaller_than_p[i]: tmp_levels[i] <= pindex
+    simd_int16_mask stp16_mask = (lev <= simd_int16(static_cast<int16_t>(pindex)));
+
+    // all_filled_after[i]: tmp_levels[i] == (h-1-tmp_nlanes) + i
+    //   levels are non-decreasing and cover [levels[0], h-2] with no gaps iff this holds.
+    simd_int16 expected_afa =
+        simd_int16(static_cast<int16_t>(h - 1 - static_cast<int>(tmp_nlanes))) + LANE_INDICES_I16;
+    simd_int16_mask afa16_mask = (lev == expected_afa);
+
+    // Convert simd_int16_mask -> simd_uint8 for blending with the existing uint8 logic.
+    // Set int16 simd to 1 where the mask is true, 0 elsewhere; then narrow to uint8.
+    // The 8-iteration narrowing loop is folded into a single pack instruction by the compiler.
+    simd_int16 stp_i16(0), afa_i16(0);
+    stdx::where(stp16_mask, stp_i16) = simd_int16(1);
+    stdx::where(afa16_mask, afa_i16) = simd_int16(1);
+    alignas(8) uint8_t stp_u8[8], afa_u8[8];
+    for (int i = 0; i < 8; i++) { stp_u8[i] = static_cast<uint8_t>(stp_i16[i]); }
+    for (int i = 0; i < 8; i++) { afa_u8[i] = static_cast<uint8_t>(afa_i16[i]); }
     simd_uint8 stp_v, afa_v;
-    stp_v.copy_from(stp_arr, stdx::element_aligned);
-    afa_v.copy_from(afa_arr, stdx::element_aligned);
+    stp_v.copy_from(stp_u8, stdx::element_aligned);
+    afa_v.copy_from(afa_u8, stdx::element_aligned);
     simd_uint8_mask smaller_than_p = has_bits and (stp_v > simd_uint8(0));
 
     // --- Determine which lanes have no valid successor (are "stuck") ---
@@ -167,7 +182,7 @@ STRPM_SIMDSolver::prog_tmp(int pindex, int h)
         {
             // Already at the maximum for this level structure => overflow to Top
             tmp_nlanes = 1;
-            tmp_levels[0] = -1;
+            tmp_levels[0] = int16_t(-1);
             fill_inactive_tmp();
             return;
         }
@@ -177,7 +192,7 @@ STRPM_SIMDSolver::prog_tmp(int pindex, int h)
             // (the smallest non-empty bitstring with leading bit 1).
             tmp_bits[0] = 1;
             match = 0;
-            tmp_levels[0] = std::min(tmp_levels[0] - 1, pindex);
+            tmp_levels[0] = static_cast<int16_t>(std::min(static_cast<int>(tmp_levels[0]) - 1, pindex));
         }
     }
     else if (nlb_counts[match] == t)
@@ -203,7 +218,7 @@ STRPM_SIMDSolver::prog_tmp(int pindex, int h)
             match++;
             if (match < k-1)
             {
-                tmp_levels[match] = tmp_levels[match-1] + 1;
+                tmp_levels[match] = static_cast<int16_t>(static_cast<int>(tmp_levels[match-1]) + 1);
                 tmp_bits[match] = 0;
             }
         }
@@ -216,9 +231,11 @@ STRPM_SIMDSolver::prog_tmp(int pindex, int h)
                 (match + 1 < tmp_nlanes and tmp_levels[match] + 1 < tmp_levels[match + 1]) )
             {
                 // There's a gap — place this empty string at the next level.
-                tmp_levels[match] = (match + 1 == tmp_nlanes) ? tmp_levels[match] + 1 : tmp_levels[match + 1] - 1;
+                tmp_levels[match] = (match + 1 == tmp_nlanes)
+                    ? static_cast<int16_t>(static_cast<int>(tmp_levels[match]) + 1)
+                    : static_cast<int16_t>(static_cast<int>(tmp_levels[match + 1]) - 1);
             }
-            else tmp_levels[match] = tmp_levels[match] + 1;
+            else tmp_levels[match] = static_cast<int16_t>(static_cast<int>(tmp_levels[match]) + 1);
         }
     }
     else
@@ -231,7 +248,7 @@ STRPM_SIMDSolver::prog_tmp(int pindex, int h)
             // start a new string there with leading bit 1.
             match++;
             tmp_bits[match] = 1;
-            tmp_levels[match] = std::min(pindex, tmp_levels[match] - 1);
+            tmp_levels[match] = static_cast<int16_t>(std::min(pindex, static_cast<int>(tmp_levels[match]) - 1));
         }
         else
         {
@@ -250,13 +267,27 @@ STRPM_SIMDSolver::prog_tmp(int pindex, int h)
         tmp_masks[match] = (1u << (t - bits_before + 1)) - 1;
 
         // Append new single-bit strings at consecutive levels after 'match'.
-        tmp_nlanes = match + 1;
-        int set_to_level = tmp_levels[match] + 1;
-        while (tmp_nlanes < k-1 and set_to_level <= h-2)
-        {
-            tmp_levels[tmp_nlanes] = set_to_level;
-            tmp_nlanes++;
-            set_to_level++;
+        // Vectorized via simd<int16_t, 8>: compute the fill range, blend into tmp_levels.
+        const int set_to_level = static_cast<int>(tmp_levels[match]) + 1;
+        // max_fill: bounded by remaining lane budget (k-2-match) and height budget (h-2-levels[match]).
+        // Derivation: original loop ran while nlanes < k-1 AND level <= h-2.
+        const int max_fill = std::max(0, std::min(k - 2 - match,
+                                                  h - 2 - static_cast<int>(tmp_levels[match])));
+        tmp_nlanes = static_cast<uint8_t>(match + 1 + max_fill);
+        if (max_fill > 0) {
+            // fill_lev[i] = (set_to_level - (match+1)) + i
+            //   => fill_lev[match+1] = set_to_level,  fill_lev[match+2] = set_to_level+1, ...
+            // set_to_level >= match+1 because levels are non-decreasing (tmp_levels[match] >= match).
+            const simd_int16 fill_lev =
+                simd_int16(static_cast<int16_t>(set_to_level - (match + 1))) + LANE_INDICES_I16;
+            simd_int16 result;
+            result.copy_from(tmp_levels, stdx::element_aligned);
+            // Blend: write fill_lev only into lanes [match+1, match+1+max_fill).
+            const simd_int16_mask in_range =
+                (LANE_INDICES_I16 >= simd_int16(static_cast<int16_t>(match + 1))) and
+                (LANE_INDICES_I16 <  simd_int16(static_cast<int16_t>(match + 1 + max_fill)));
+            stdx::where(in_range, result) = fill_lev;
+            result.copy_to(tmp_levels, stdx::element_aligned);
         }
         // SIMD bulk-set: for all lanes in (match, tmp_nlanes), set mask=1, bits=0.
         // Lanes beyond tmp_nlanes are zeroed by fill_inactive_tmp below.
@@ -275,20 +306,20 @@ STRPM_SIMDSolver::prog_tmp(int pindex, int h)
 void
 STRPM_SIMDSolver::stream_pm(std::ostream &out, int idx)
 {
-    uint8_t nlanes = pm_nlanes[idx];
-    if (nlanes > 0 and pm_levels[idx*8] == -1) {
+    uint8_t nlanes = pm[idx].nlanes;
+    if (nlanes > 0 and pm[idx].levels[0] == -1) {
         out << " \033[1;33mTop\033[m";
     } else {
         out << " { ";
         int output_level = 0;
         for (int i = 0; i < nlanes; i++) {
             if (i>0) out << ", ";
-            while (pm_levels[idx*8 + i] > output_level)
+            while (pm[idx].levels[i] > output_level)
             {
                 out << "ε, ";
                 output_level++;
             }
-            out << std::bitset<8>(pm_bits[idx*8 + i]) << "/" << std::bitset<8>(pm_masks[idx*8 + i]);
+            out << std::bitset<8>(pm[idx].bits[i]) << "/" << std::bitset<8>(pm[idx].masks[i]);
         }
         while (output_level < h-2)
         {
@@ -303,7 +334,7 @@ STRPM_SIMDSolver::stream_pm(std::ostream &out, int idx)
  * Write SIMD state to ostream.
  */
 void
-STRPM_SIMDSolver::stream_simd(std::ostream &out, simd_uint8& bits, simd_uint8& masks, int* levels, uint8_t nlanes)
+STRPM_SIMDSolver::stream_simd(std::ostream &out, simd_uint8& bits, simd_uint8& masks, int16_t* levels, uint8_t nlanes)
 {
     if (nlanes > 0 and levels[0] == -1) {
         out << " \033[1;33mTop\033[m";
@@ -438,7 +469,7 @@ bool
 STRPM_SIMDSolver::lift(int v, int target, int &str, int pl)
 {
     // check if already Top
-    if (pm_nlanes[v] > 0 and pm_levels[v*8] == -1) return false; // already Top
+    if (pm[v].nlanes > 0 and pm[v].levels[0] == -1) return false; // already Top
 
     const int pr = priority(v);
     const int pindex = pl == 0 ? (h-1)-(pr+1)/2-1 : (h-1)-pr/2-1;
@@ -735,30 +766,21 @@ STRPM_SIMDSolver::run(int t_val, int k_val, int depth, int player)
     logger << "Strahler-tree parameters for player " << player << ": k = " << k << ", t = " << t << ", h = " << h << std::endl;
 #endif
 
-    // Initialize progress measures using flat arrays.
+    // Initialize progress measures using AoS layout.
     // Every node is set to the smallest leaf in the tree.
     const int nc = nodecount();
-    pm_bits.assign(nc * 8, 0);
-    pm_masks.assign(nc * 8, 0);
-    pm_levels.assign(nc * 8, 0);
-    pm_nlanes.assign(nc, static_cast<uint8_t>(k - 1));
 
-    // Build the initial mask and levels pattern (once), then stamp it to every node.
-    alignas(8) uint8_t initial_mask[8] = {};
-    int initial_levels[8] = {};
-
-    initial_mask[0] = (1 << (t+1)) - 1;
-    initial_levels[0] = 0;
+    // Build the initial NodePM pattern once, then fill the entire vector with it.
+    NodePM init{};
+    init.nlanes  = static_cast<uint8_t>(k - 1);
+    init.masks[0] = static_cast<uint8_t>((1 << (t+1)) - 1);
+    // init.levels[0] = 0 already (zero-initialised by NodePM{})
     for (int i = 1; i < k-1; i++)
     {
-        initial_levels[i] = i;
-        initial_mask[i] = 1;
+        init.levels[i] = static_cast<int16_t>(i);
+        init.masks[i]  = 1;
     }
-    for (int n = 0; n < nc; n++)
-    {
-        std::memcpy(&pm_masks[n * 8], initial_mask, 8);
-        std::memcpy(&pm_levels[n * 8], initial_levels, 8 * sizeof(int));
-    }
+    pm.assign(nc, init);
 
 #ifndef NDEBUG
     if (trace >= 1)
@@ -811,7 +833,7 @@ STRPM_SIMDSolver::run(int t_val, int k_val, int depth, int player)
 
     for (int v=0; v<nodecount(); v++) {
         if (disabled[v]) continue;
-        if (pm_nlanes[v] == 0 or pm_levels[v*8] != -1) {
+        if (pm[v].nlanes == 0 or pm[v].levels[0] != -1) {
             if (owner(v) != player) {
                 // TODO: don't rely on the strategy array in the Game class
                 if (lift(v, -1, game.getStrategy()[v], player)) logger << "error: " << v << " is not progressive!" << std::endl;
@@ -826,7 +848,7 @@ STRPM_SIMDSolver::run(int t_val, int k_val, int depth, int player)
             logger << "\033[1m" << label_vertex(v) << (owner(v)?" (odd)":" (even)") << "\033[m:";
             stream_pm(logger, v);
 
-            if (pm_nlanes[v] == 0 or pm_levels[v*8] != -1) {
+            if (pm[v].nlanes == 0 or pm[v].levels[0] != -1) {
                 if (owner(v) != player) {
                     logger << " => " << label_vertex(game.getStrategy(v));
                 }
@@ -842,7 +864,7 @@ STRPM_SIMDSolver::run(int t_val, int k_val, int depth, int player)
 
     for (int v=0; v<nodecount(); v++) {
         if (disabled[v]) continue;
-        if (pm_nlanes[v] == 0 or pm_levels[v*8] != -1) Solver::solve(v, 1-player, game.getStrategy(v));
+        if (pm[v].nlanes == 0 or pm[v].levels[0] != -1) Solver::solve(v, 1-player, game.getStrategy(v));
     }
 
     Solver::flush();
@@ -859,6 +881,7 @@ STRPM_SIMDSolver::run()
     int h1 = (max_prio+1)/2;
 
     int h_max = std::max(h0, h1);
+    assert(h_max < 32767); // levels stored as int16_t; max_prio must be < 65534
     int k_max = std::min(t_max + 2, h_max);
 
     // create datastructures
