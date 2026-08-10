@@ -19,7 +19,22 @@
 
 #include "oink/solver.hpp"
 
+#include <vector>
+#include <cstdint>
+#include <boost/container/small_vector.hpp>
+
 namespace pg {
+
+// Progress-measure storage. The level array is non-decreasing and the whole
+// measure length is bounded by ~k-1+t, which stays within STRPM_INLINE for the
+// SIMD-representable range and for most practical games. Small-buffer
+// optimization keeps per-node measures and the tmp/best/test working copies
+// allocation-free on the common (small) case; larger measures spill to the heap
+// transparently. This removes the per-node heap allocations and whole-vector
+// copies that dominated the scalar solver's cost.
+inline constexpr std::size_t STRPM_INLINE = 16;
+using BitVec = boost::container::small_vector<uint8_t, STRPM_INLINE>;
+using LevVec = boost::container::small_vector<int, STRPM_INLINE>;
 
 class STRPMSolver : public Solver
 {
@@ -37,17 +52,17 @@ protected:
      *      - h: height
      */
     int k, t, h;
-    std::vector<std::vector<bool>> pm_b;
-    std::vector<std::vector<int>> pm_d;
+    std::vector<BitVec> pm_b;
+    std::vector<LevVec> pm_d;
 
-    std::vector<bool> tmp_b;
-    std::vector<int> tmp_d;
+    BitVec tmp_b;
+    LevVec tmp_d;
 
-    std::vector<bool> best_b;
-    std::vector<int> best_d;
+    BitVec best_b;
+    LevVec best_d;
 
-    std::vector<bool> test_b;
-    std::vector<int> test_d;
+    BitVec test_b;
+    LevVec test_d;
 
     uintqueue Q;
     bitset dirty;
@@ -79,13 +94,13 @@ protected:
     void stream_best(std::ostream &out, int h);
 
     // Compare tmp to best
-    int compare(int pindex, std::vector<bool>& other_b, std::vector<int>& other_d);
+    int compare(int pindex, BitVec& other_b, LevVec& other_d);
     // Compare tmp to test
     int compare_test(int pindex);
 
     // Bump tmp given priority p
     void trunc_tmp(int pindex);
-    int skipUntilNextLevel (std::vector<int>& curr_d, int i);
+    int skipUntilNextLevel (LevVec& curr_d, int i);
     void prog_tmp(int pindex, int h);
     void prog_cap_tmp(int pindex);
 

@@ -16,6 +16,7 @@
 
 #include "oink/solver.hpp"
 #include "oink/oink.hpp"
+#include "oink/solvers.hpp"
 
 namespace pg {
 
@@ -25,6 +26,17 @@ Solver::Solver(Oink& oink, Game& game) : game(game), logger(oink.logger), trace(
     // sanity check if the game is properly sorted
     for (int i=1; i<nodecount(); i++) assert(priority(i-1) <= priority(i));
 #endif
+}
+
+void
+Solver::solveRemainderWith(const std::string& solver_id)
+{
+    // The sub-solver reads the same oink.disabled bitset, so it automatically
+    // operates only on the vertices this solver left unsolved, and reports its
+    // results through the same Oink (solve/flush). trace is inherited via the
+    // Solver constructor (trace(oink.trace)).
+    auto sub = Solvers::construct(solver_id, oink, game);
+    sub->run();
 }
 
 }

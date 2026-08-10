@@ -65,6 +65,15 @@ protected:
     void flush() { oink.flush(); }
     void reset_to_initial(bitset vals) { oink.disabled = vals; }
 
+    /**
+     * Construct another registered solver (by id) and run it on the *remaining*
+     * subgame. The sub-solver shares this solver's Oink and Game, so every
+     * vertex already solved here is in <disabled> and is respected; the
+     * sub-solver only has to finish the remainder. Used as a fallback when a
+     * bounded solver can no longer represent the parameters it would need.
+     */
+    void solveRemainderWith(const std::string& solver_id);
+
 private:
     Oink& oink;
 };
