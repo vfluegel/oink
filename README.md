@@ -155,6 +155,9 @@ SSPM            | Quasi-polynomial time succinct progress measures
 BSSPM           | Quasi-polynomial time succinct progress measures (bounding variant by TvD and MJ, often faster)
 QPT             | Quasi-polynomial time ordered progress measures
 BQPT            | Quasi-polynomial time ordered progress measures (bounding variant by TvD and MJ, often faster)
+STRPM           | Quasi-polynomial time succinct progress measures based on Strahler trees
+SSPM-SIMD       | Version of BSSPM using SIMD
+STRPM-SIMD      | Version of STRPM using SIMD
 
 ### Preprocessing
 
