@@ -465,6 +465,54 @@ STRPMSolver::stream_pm(std::ostream &out, int idx)
 }
 
 /**
+ * Write all occuring pms to ostream
+ */
+void
+STRPMSolver::print_full_pm(std::ostream &out)
+{
+    std::vector<size_t> already_added {};
+
+    for (size_t idx = 0; idx < pm_b.size(); idx++)
+    {
+        // Skip any top entries
+        if (pm_d[idx][0] == -1) continue;
+
+        // Check if we already printed this exact branch for another vertex
+        // TODO: could make this more efficient with a hashmap to store "already seen" flag
+        bool skip = false;
+        for (size_t n : already_added)
+        {
+            if (pm_b[idx] == pm_b[n] and pm_d[idx] == pm_d[n]) 
+            {
+                // Match was found, skip printing
+                skip = true;
+                break;
+                // TODO: This is where we could potentially add counting how often a value occurs
+            }
+        }
+        if (skip) continue;
+
+        // Print the actual bits or empty to out
+        int j=0;
+        for (int lvl=0; lvl<h-1; lvl++) {
+            if (lvl>0) out << ",";
+            int c=0;
+            while (j<pm_d[idx].size() and pm_d[idx][j] == lvl) {
+                c++;
+                out << static_cast<int>(pm_b[idx][j]);
+                j++;
+            }
+            if (c == 0) out << "e";
+        }
+
+        out << "|";
+        // Remember we already printed this
+        already_added.push_back(idx);
+    }
+    out << std::endl;
+}
+
+/**
  * Write tmp to ostream.
  */
 void
@@ -1068,6 +1116,7 @@ STRPMSolver::run()
         {
             // We can stop, everything is solved!
             logger << "Solved with k = " << k_val << ", t = " << t_val << std::endl;
+            print_full_pm(logger);
             break;
         }
         else if (k_val < k_max or t_val < t_max)

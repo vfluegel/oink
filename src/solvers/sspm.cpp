@@ -240,6 +240,67 @@ SSPMSolver::stream_pm(std::ostream &out, int idx)
 }
 
 /**
+ * Write all occuring pms to ostream
+ */
+void
+SSPMSolver::print_full_pm(std::ostream &out)
+{
+    std::vector<size_t> already_added {};
+
+    for (size_t idx = 0; idx < nodecount(); idx++)
+    {
+        int base = idx*l;
+        // Skip any top entries
+        if (pm_d[base] == -1) continue;
+
+        // Check if we already printed this exact branch
+        bool skip = false;
+        for (size_t n : already_added)
+        {
+            bool matches = true;
+            int other_base = n*l;
+            
+            for (size_t pos = 0; pos < l; pos++)
+            {
+                if (pm_b[base + pos] != pm_b[other_base + pos] or 
+                    pm_d[base + pos] != pm_d[other_base + pos]) 
+                    {
+                        // There is a mismatch, this one does not match
+                        matches = false;
+                        break;
+                    }
+            }
+            
+            // NO mismatch - we have already seen this
+            if (matches)
+            {
+                skip = true;
+                break;
+            }
+        }
+        if (skip) continue;
+        
+        // Print actual bits
+        int j=0;
+        for (int i=0; i<h; i++) {
+            if (i>0) out << ",";
+            int c=0;
+            while (j<l and pm_d[base+j] == i) {
+                c++;
+                out << pm_b[base+j];
+                j++;
+            }
+            if (c == 0) out << "e";
+        }
+
+        out << "|";
+        // Remember we already printed this
+        already_added.push_back(idx);
+    }
+    out << std::endl;
+}
+
+/**
  * Write tmp to ostream.
  */
 void
@@ -704,6 +765,7 @@ SSPMSolver::run()
     }
 
     logger << "solved with " << lift_count << " lifts, " << lift_attempt << " lift attempts, max l " << i << "." << std::endl;
+    print_full_pm(logger);
 }
 
 }

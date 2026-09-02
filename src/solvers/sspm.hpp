@@ -76,6 +76,8 @@ protected:
 
     // Render pm[idx] to given ostream
     void stream_pm(std::ostream &out, int idx);
+    // Render all occuring pms to ostream
+    void print_full_pm(std::ostream &out);
     // Render tmp to given ostream
     void stream_tmp(std::ostream &out, int h);
     // Render best to given ostream
