@@ -142,20 +142,26 @@ STRPMSolver::tmp_to_test()
 }
 
 /**
- * Set tmp := min { m | m ==_p tmp }
+ * Replace a candidate by the first canonical leaf with its p-prefix.
  */
 void
-STRPMSolver::trunc_tmp(int pindex)
+STRPMSolver::truncate(BitVec& bits, LevVec& levels, int pindex)
 {
-    if (tmp_d[0] == -1) return; // already Top
-    // compute the lowest pindex >= p
-    // [pindex],.,...,.. => [pindex],000
-    // if pindex is the bottom, then this simply "buries" the remainder
-    int  i=tmp_d.size()-1;
-    while (i>=0 and tmp_d[i] > pindex) i--;
-    tmp_b.resize(i + 1);
-    tmp_d.resize(i + 1);
-    assert ((tmp_d.size() - std::unordered_set<int>(tmp_d.begin(), tmp_d.end()).size()) <= t);
+    if (levels.empty() || levels[0] == -1 || k == 1) return;
+    const auto end = std::upper_bound(levels.begin(), levels.end(), pindex);
+    const int retained = static_cast<int>(end - levels.begin());
+    const int strings = count_distinct_nondecreasing(levels.begin(), end);
+    const int remaining = k - 1 - strings;
+    bits.resize(retained);
+    levels.resize(retained);
+    if (remaining == 0) return;
+
+    // First canonical leaf in this prefix class: spend the unused non-leading
+    // bit budget on its first zero string, then fill the required leading zeros.
+    const int first_length = t - (retained - strings) + 1;
+    bits.insert(bits.end(), first_length + remaining - 1, 0);
+    levels.insert(levels.end(), first_length, pindex + 1);
+    for (int i = 1; i < remaining; ++i) levels.push_back(pindex + 1 + i);
 }
 
 /**
@@ -608,7 +614,6 @@ STRPMSolver::lift(int v, int target, int &str, int pl)
             }
 #endif
         if (pl == (pr&1)) prog_tmp(pindex, h);
-        //else trunc_tmp(pindex);
 #ifndef NDEBUG
             if (trace >= 2) {
                 stream_tmp(logger, h);
@@ -617,6 +622,7 @@ STRPMSolver::lift(int v, int target, int &str, int pl)
 #endif
         to_best(v);
         if (compare(pindex, best_b, best_d) > 0) {
+            if (pl != (pr&1)) truncate(tmp_b, tmp_d, pindex);
             from_tmp(v);
 #ifndef NDEBUG
             if (trace >= 1) {
@@ -645,7 +651,6 @@ STRPMSolver::lift(int v, int target, int &str, int pl)
         }
 #endif
         if (pl == (pr&1)) prog_tmp(pindex, h);
-        //else trunc_tmp(pindex);
 #ifndef NDEBUG
         if (trace >= 2) {
             stream_tmp(logger, h);
@@ -674,6 +679,7 @@ STRPMSolver::lift(int v, int target, int &str, int pl)
     // set best to pm if higher
     to_tmp(v);
     if (compare(pindex, best_b, best_d) < 0) {
+        if (pl != (pr&1)) truncate(best_b, best_d, pindex);
 #ifndef NDEBUG
         if (trace >= 1) {
             logger << "\033[1;32mnew measure\033[m of \033[36;1m" << label_vertex(v) << "\033[m:";

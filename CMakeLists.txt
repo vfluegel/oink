@@ -208,6 +208,14 @@ if(CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
         enable_testing()
         set(CTEST_TESTING_TIMEOUT 30)
 
+        add_executable(test_strpm_bounded test/test_strpm_bounded.cpp)
+        set_target_props(test_strpm_bounded)
+        target_compile_options(test_strpm_bounded PRIVATE -UNDEBUG)
+        foreach(backend scalar simd)
+            add_test(NAME TestSTRPMBounded-${backend} COMMAND test_strpm_bounded
+                ${CMAKE_CURRENT_SOURCE_DIR}/test/strpm-nonstrict-tail.pg ${backend})
+        endforeach()
+
         # test fixpoint algorithms
         add_test(NAME TestSolverFPIpar COMMAND test_solvers ${CMAKE_CURRENT_SOURCE_DIR}/tests --fpi -w 0)
         add_test(NAME TestSolverFPIseq COMMAND test_solvers ${CMAKE_CURRENT_SOURCE_DIR}/tests --fpi -w -1)
