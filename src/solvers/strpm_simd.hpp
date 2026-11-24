@@ -225,6 +225,8 @@ protected:
     int compare(int pindex);
 
     void prog_tmp(int pindex, int h);
+    void truncate(simd_u16x8& bits, simd_u16x8& masks, simd_u16x8& levels,
+                  uint8_t& nlanes, int pindex);
 
     // Lift node, triggered by change to target
     bool lift(int node, int target, int &str, int pl);

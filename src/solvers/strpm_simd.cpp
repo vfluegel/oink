@@ -83,6 +83,33 @@ struct ApproxSizeCompare {
     }
 };
 
+// Reset a nonstrict candidate to the first canonical leaf with its prefix.
+void
+STRPM_SIMDSolver::truncate(simd_u16x8& bits, simd_u16x8& masks,
+                          simd_u16x8& levels, uint8_t& nlanes, int pindex)
+{
+    if (k == 1 || (nlanes != 0 && levels[0] == TOP_SENTINEL)) return;
+    const auto keep = pindex < 0 ? simd_u16x8_mask(false)
+        : (LANE_INDICES < simd_u16x8(nlanes)) &&
+          (levels <= simd_u16x8(static_cast<uint16_t>(pindex)));
+    const int retained = stdx::popcount(keep);
+    if (retained == k - 1) return;
+
+    simd_u16x8 kept_masks = masks;
+    stdx::where(!keep, kept_masks) = 0;
+    const int used = simd_prefix_sum_inclusive_u16x8(
+        simd_popcount_u16x8(kept_masks))[7] - retained;
+    const auto fill = (LANE_INDICES >= simd_u16x8(retained)) &&
+                      (LANE_INDICES < simd_u16x8(k - 1));
+    stdx::where(!keep, bits) = 0;
+    stdx::where(fill, masks) = 1;
+    masks[retained] = static_cast<uint16_t>((1u << (t - used + 1)) - 1);
+    stdx::where(fill, levels) =
+        simd_u16x8(static_cast<uint16_t>(pindex + 1 - retained)) + LANE_INDICES;
+    nlanes = static_cast<uint8_t>(k - 1);
+    stdx::where(LANE_INDICES >= simd_u16x8(nlanes), masks) = 0;
+}
+
 /**
  * Set tmp := min { m | m >_p tmp }
  */
@@ -534,7 +561,6 @@ STRPM_SIMDSolver::lift(int v, int target, int &str, int pl)
             }
 #endif
         if (pl == (pr&1)) prog_tmp(pindex, h);
-        //else trunc_tmp(pindex);
 #ifndef NDEBUG
             if (trace >= 2) {
                 stream_simd(logger, tmp_bits, tmp_masks, tmp_levels, tmp_nlanes);
@@ -543,6 +569,8 @@ STRPM_SIMDSolver::lift(int v, int target, int &str, int pl)
 #endif
         to_best(v);
         if (compare(pindex) > 0) {
+            if (pl != (pr&1))
+                truncate(tmp_bits, tmp_masks, tmp_levels, tmp_nlanes, pindex);
             from_tmp(v);
 #ifndef NDEBUG
             if (trace >= 1) {
@@ -618,6 +646,8 @@ STRPM_SIMDSolver::lift(int v, int target, int &str, int pl)
     // set best to pm if higher
     to_tmp(v);
     if (compare(pindex) < 0) {
+        if (!do_prog)
+            truncate(best_bits, best_masks, best_levels, best_nlanes, pindex);
 #ifndef NDEBUG
         if (trace >= 1) {
             logger << "\033[1;32mnew measure\033[m of \033[36;1m" << label_vertex(v) << "\033[m:";

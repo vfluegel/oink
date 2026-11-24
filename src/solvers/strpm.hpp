@@ -99,7 +99,7 @@ protected:
     int compare_test(int pindex);
 
     // Bump tmp given priority p
-    void trunc_tmp(int pindex);
+    void truncate(BitVec& bits, LevVec& levels, int pindex);
     int skipUntilNextLevel (LevVec& curr_d, int i);
     void prog_tmp(int pindex, int h);
     void prog_cap_tmp(int pindex);
